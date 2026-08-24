@@ -1,6 +1,28 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QLabel, QPushButton, QHBoxLayout, QCheckBox, QGridLayout, QMainWindow, QApplication, QWidget, QFrame, QGroupBox, QVBoxLayout, QRadioButton, QButtonGroup)
+from PyQt5.QtCore import (Qt, QObject, pyqtSignal, QThread)
+from PyQt5.QtWidgets import (QLabel, QPushButton, QHBoxLayout, QCheckBox, QGridLayout, QMainWindow, QApplication, QWidget, QFrame, QGroupBox, QVBoxLayout, QRadioButton, QButtonGroup, QTextEdit, QPlainTextEdit)
+import string
+import requests
 import sys
+
+
+
+class Worker(QObject):
+    finished = pyqtSignal(str)
+
+    def ask_ai(self, prompt, model="qwen3:14b"):
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False
+            }
+        )
+        response.raise_for_status()
+        response = response.json().get("response", "No response from model.")
+        self.finished.emit(response)
+
+
 
 
 
@@ -22,13 +44,27 @@ class MainWindow(QMainWindow):
         self.cnochecker = QRadioButton("None", self)
         self.choose_ai_checker_group = QButtonGroup(self)
 
+        self.ai_question = QTextEdit(self)
+        self.ai_question.setPlaceholderText("Enter text")
+
+        self.submit_ai_question = QPushButton("Submit", self)
+
+        self.ai_display = QPlainTextEdit(self)
+        self.ai_display.setReadOnly(True)
+        self.ai_display.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+
 
         self.choose_ai.setObjectName("ailabels")
         self.choose_ai_checker.setObjectName("ailabels")
 
 
-        self.ai_model = ""
+
+        self.ai_model = "qwen3:14b"
         self.ai_checker_model = ""
+
+        self.ai_answer = ""
+
+        self.qwen314b.setChecked(True)
 
         self.initUI()
 
@@ -108,6 +144,47 @@ class MainWindow(QMainWindow):
         self.cnochecker.clicked.connect(self.choose_checker)
 
 
+        right_side_layout = QVBoxLayout()
+
+        right_side.setLayout(right_side_layout)
+
+        right_top = QHBoxLayout()
+
+        right_side_layout.addLayout(right_top, stretch=3)
+
+        dividerb = QFrame()
+
+        dividerb.setStyleSheet("""
+            background-color: black;
+            min-height: 4px;
+            max-height: 4px;
+        """)
+
+        right_side_layout.addWidget(dividerb)
+
+        right_bottom = QHBoxLayout()
+
+        right_side_layout.addLayout(right_bottom, stretch=1)
+
+        right_bottom.addWidget(self.ai_question)
+
+        self.ai_question.setStyleSheet("""
+            font-family: Arial;
+            font-size: 20px;
+        """)
+
+        right_bottom.addWidget(self.submit_ai_question)
+
+        self.submit_ai_question.clicked.connect(self.ask_ai)
+
+        right_top.addWidget(self.ai_display)
+
+
+
+
+
+
+
 
     def func_choose_ai(self):
         button = self.sender()
@@ -125,7 +202,6 @@ class MainWindow(QMainWindow):
             case _:
                 print("Something went wrong: func_choose_ai")
 
-        print(f"Ai model: {self.ai_model}")
 
 
     def choose_checker(self):
@@ -144,7 +220,28 @@ class MainWindow(QMainWindow):
             case _:
                 print("Something went wrong: choose_checker")      
 
-        print(f"Checker model: {self.ai_checker_model}")
+
+    def ask_ai(self):
+
+        prompt = self.ai_question.toPlainText()
+
+        self.thread = QThread()
+        self.worker = Worker()
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(lambda: self.worker.ask_ai(prompt, model=self.ai_model))
+
+        self.worker.finished.connect(lambda answer: self.update_reasoning(answer))
+
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+
+        self.thread.start()
+        
+
+    def update_reasoning(self, answer):
+        self.ai_display.setPlainText(answer)
+
 
 
 
